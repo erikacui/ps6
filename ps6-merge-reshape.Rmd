@@ -1,0 +1,268 @@
+---
+title: "ps6-merge-reshape"
+author: "Erika Cui"
+date: "2023-11-30"
+output: html_document
+---
+
+### **1 How is CO2 related to global temperature?**
+
+#### **1.1 Scripps CO2 data**
+
+##### **1.1.1 Load the dataset. Ensure it is good. Below, you only need variables year, month, and co2. You can keep only these columns and drop everything else.**
+
+```{r}
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+scripps1 <- read_delim("../data/scripps-co2.csv.bz2")
+
+scripps <- scripps1 %>% 
+  select(year, month, co2)
+
+  head(scripps)
+```
+
+
+
+##### **1.1.2 What does a line in this dataset represent?**
+
+A line of this dataset represents the year and the month the certain number of co2.
+
+##### **1.1.3 How are missing values coded in this dataset?**
+
+```{r}
+scripps %>% 
+  filter(as.numeric(co2) < 0)
+```
+
+I think the missing values are represented by the -99.99 numbers in co2.
+
+##### **1.1.4 Which time period does the dataset represent?**
+
+```{r}
+scripps %>% 
+  tail()
+```
+
+The time period for this dataset is from 1958 to 2023.
+
+##### **1.1.5 Make a plot where you show how the CO2 concentration in atmosphere has changed over years.**
+
+```{r}
+scripps %>% 
+  filter(as.numeric(co2) > 0) %>%
+  mutate(months = as.Date(paste(year, month, "01", sep = "-"))) %>% 
+  ggplot(aes(months, co2)) +
+  geom_line(alpha = 0.7) +
+  geom_point(size = 0.8) +
+  scale_x_date(date_labels = "%Y", date_breaks = "5 year") +
+  labs(title = "CO2 Concentration in Atmosphere Over Years", x = "Year", y = "CO2")
+```
+
+
+##### **1.1.6 Comment the graph. How has CO2 level changed through the last 60 years?**
+
+After looking at the graph, it shows that the CO2 level has gone up through the last 60 years.
+
+#### **1.2 HadCRUT temperature data**
+
+##### **1.2.1 Load data and ensure it looks good. Below, you only need year and temperature anomaly, you can as well drop the other columns now (and rename the ones you need to something better).**
+
+```{r}
+hc1 <- read_delim("../data/hadcrut-5.0.1.0-annual.csv.bz2")
+
+hc <- hc1 %>% 
+  select(Time, `Anomaly (deg C)`) %>% 
+  rename(year = Time, temp_anomaly = `Anomaly (deg C)`)
+
+hc
+```
+
+
+##### **1.2.2 What does a line in this dataset represent?**
+
+The line represents the anomaly of a temperature (in Celsius) at a certain year.
+
+##### **1.2.3 Which time period does the dataset represent?**
+
+```{r}
+hc %>% 
+  tail()
+```
+
+The time period of the dataset is from 1850 to 2023.
+
+##### **1.2.4 When you encounter political discussion related to future global temperature levels, you hear values like 1.5C and 2C above pre-industrial temperature. However, we have a problem– HadCRUT anomaly is not above the pre-industrial temperature, but above 1961-1990 average. Compute the pre-industrial (year 1900 and before) average, and create a new column–temperature anomaly over the pre-industrial average (pre-industrial baseline). Show how big is the pre-industrial average, when compared to the 1961-1990 average.**
+
+```{r}
+pre_avg <- hc %>% 
+  filter(year <= 1900) %>% 
+  summarize(pre_industrial_avg = mean(temp_anomaly, na.rm = TRUE))
+print(pre_avg)
+```
+```{r}
+hc <- hc %>% 
+  mutate(pre_industrial_anomaly = temp_anomaly - pre_avg$pre_industrial_avg)
+head(hc)
+
+avg_1961_1990 <- hc %>% 
+  filter(year >= 1961 & year <= 1990) %>% 
+  summarize(avg_1961_1990 = mean(temp_anomaly, na.rm = TRUE))
+
+difference <- pre_avg$pre_industrial_avg - avg_1961_1990$avg_1961_1990
+cat("The difference is:", difference)
+
+  
+```
+
+
+##### **1.2.5 Make a plot where you show how has global surface temperature changed through time. Use the anomaly w.r.t. the pre-industrial baseline.**
+
+```{r}
+hc %>% 
+  ggplot(aes(year, pre_industrial_anomaly)) +
+  geom_point(size = 2) +
+  labs(title = "Global Surface Temperature Changes Through Time", x = "Year", y = "Pre Industrial Anomaly")
+```
+
+
+##### **1.2.6 Comment the plot. How has the global temperature evolved throught last 170 years?**
+
+We see that from 1850 to 1900, there were ups and downs of the global temperature. After 1900, it started going up, but once the year hit around 1950, there was a drop in the global temperature. However, around the mid 1960s, the temperature started going up, with no drops in the temperature.
+
+#### **1.3 How is global temperature related to CO2 levels?**
+
+##### **1.3.1 What kind of variables you can imagine to use to merge CO2 data with global temperature data–what might be the merge key?**
+
+I think the merge key would be the variable "year".
+
+##### **1.3.2 But we have a problem. CO2 data is monthly but temperature data yearly only. How might you still be able to merge these two datasets?**
+
+I can convert the monthly data into years.
+
+##### **1.3.3 Merge these two datasets. What kind of merge–left inner join/right join/left join/... you want to use? Explain!**
+
+```{r}
+yearlyCO2 <- scripps %>% 
+  group_by(year) %>%
+  summarize(avg_co2_yearly = mean(co2, na.rm = TRUE)) 
+
+mergedData <- left_join(hc, yearlyCO2)
+
+mergedData <- mergedData %>% 
+  filter(!is.na(avg_co2_yearly))
+mergedData
+```
+
+I used left_join because when merging data sets that have been over a long period of time and want to merge Co2 data and global temperature, the merge key would be the years because of the corresponding rows. I want the rows the return from the first table and all the columns from both tables. 
+
+##### **1.3.4 Make a plot in CO2-temperature anomaly axis (see below).**
+
+- **(a) Use the temperature anomaly wrt the pre-industrial average.**
+- **(b) Mark years with dots or other suitable symbols.**
+- **(c) Mark decades with colors. Use some sort of heat-describing colors.**
+- **(d) Put the trend line on the figure, use a suitable color to mark it.**
+- **(e) add a horizontal line at 1.5C anomaly**
+- **(f) Ensure that labels are clear enough.**
+
+```{r}
+
+
+mergedData %>%
+  filter(avg_co2_yearly >= 300) %>%
+  mutate(decade = as.factor((year %/% 10) * 10)) %>% 
+  ggplot(aes(avg_co2_yearly, temp_anomaly, col = decade)) +
+  geom_point(size = 2, alpha = 0.7) +
+  geom_smooth(color = "blue") +
+  geom_hline(yintercept = 1.5, color = "black", size = 1) +
+  scale_color_discrete(name = "Decades") +
+  labs(title = "CO2 Temperature", x = "Average CO2 Yearly", y = "Temperature Anomaly", color = "Decades")
+
+  
+
+```
+
+### **2 Global surface temperature versus lower troposphere temperature**
+
+##### **2.1 Load data and ensure it looks good. Below, you only need variables year, month and globe, so you can select just those.**
+
+```{r}
+filterGlobal <- read_delim("../data/UAH-lower-troposphere-wide.csv.bz2")
+
+filterUah <- filterGlobal %>%
+  select(year, month, globe)
+
+head(filterUah)
+  
+```
+
+
+##### **2.2 As we want to compare monthly UAH data with yearly HadCRUT measures, you need to compute yearly UAH averages.**
+
+```{r}
+uah <- filterUah %>% 
+  group_by(year) %>% 
+  summarize(yearlyUahAvg = mean(globe, na.rm = TRUE))
+
+head(uah)
+```
+
+
+##### **2.3 Now merge HadCRUT and UAH data. Show that the result is good. Below, we only need year and the one anomaly from each dataset, so if you have more variables, you can drop them now.**
+
+```{r}
+mergeHc <- mergedData %>% 
+  select(year, pre_industrial_anomaly)
+
+mergedUah <- uah %>% 
+  select(year, yearlyUahAvg) %>% 
+  filter(!is.na(yearlyUahAvg))
+
+mergedTemp <- inner_join(mergeHc, mergedUah, by = "year")
+
+mergedTemp
+```
+
+
+##### **2.4 Is this dataset in a wide or long form?**
+
+This dataset is wide form because each column are different variables with each row containing different information.  
+
+##### **2.5 Reshape it into long form. The variables should be something like “year”, “anomaly” and “type”, and the later should be type of anomaly (surface/lower troposphere)**
+
+```{r}
+longForm <- mergedTemp %>% 
+  pivot_longer(cols = c(pre_industrial_anomaly, yearlyUahAvg),
+               names_to = "type",
+               values_to = "anomaly") %>% 
+  filter(!is.na(anomaly))
+
+longForm
+```
+
+
+##### **2.6 Make a plot where you show how temperature anomaly changes over years. Mark both types with a different color, and add trend lines for each type. Which temperature–surface of lower troposhphere–is growing faster?**
+
+```{r}
+longForm %>% 
+  ggplot(aes(x = year, y = anomaly, color = type)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Temperature Anomaly Changes Over Years", x = "Year", y = "Anomaly") +
+  scale_color_manual(name = "Type",
+                    values = c("pre_industrial_anomaly" = "salmon", "yearlyUahAvg" = "turquoise"),
+                    labels = c("Surface", "Troposphere"))
+  
+```
+
+
+The surface temperature is growing faster.
+
+##### **Finally tell us how many hours did you spend on this PS.**
+
+I spent around 9 hours on PS6.
